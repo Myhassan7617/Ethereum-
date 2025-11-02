@@ -171,6 +171,12 @@
     canvas {
       background-color: transparent;
     }
+    .wallet-info {
+      background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
     @media (max-width: 768px) {
       .panel-content {
         padding: 15px;
@@ -188,7 +194,30 @@
       <button id="themeToggle" class="btn btn-secondary"><i class="fas fa-moon"></i> Dark Mode</button>
     </div>
 
-    <div id="deployPanel" class="panel active card p-4 mb-4">
+    <!-- MetaMask Connection Panel -->
+    <div id="connectPanel" class="panel active card p-4 mb-4">
+      <div class="wallet-info text-center mb-4">
+        <h4><i class="fas fa-wallet"></i> Connect Your Wallet</h4>
+        <p class="mb-0">Connect MetaMask to use this dAPP</p>
+      </div>
+      <button id="connectButton" class="btn btn-primary btn-block"><i class="fas fa-plug"></i> Connect MetaMask</button>
+      <div id="connectStatus" class="mt-3 text-center"></div>
+      <div class="mt-3 text-center">
+        <small class="text-muted">Don't have MetaMask? <a href="https://metamask.io/download.html" target="_blank" class="text-warning">Download here</a></small>
+      </div>
+    </div>
+
+    <!-- Wallet Connected Info -->
+    <div id="walletInfoPanel" class="panel card p-4 mb-4">
+      <div class="wallet-info">
+        <h4><i class="fas fa-check-circle"></i> Wallet Connected</h4>
+        <p class="mb-1"><strong>Address:</strong> <span id="walletAddress">0x...</span></p>
+        <p class="mb-0"><strong>Balance:</strong> <span id="walletBalance">0 ETH</span></p>
+      </div>
+      <button id="disconnectButton" class="btn btn-outline-danger btn-sm mt-2"><i class="fas fa-power-off"></i> Disconnect</button>
+    </div>
+
+    <div id="deployPanel" class="panel card p-4 mb-4">
       <button id="deployButton" class="btn btn-success btn-block"><i class="fas fa-rocket"></i> Deploy Contract</button>
       <div id="deployResult" class="deploy-result mt-3 text-center"><code>No Contract Deployed</code></div>
     </div>
@@ -306,6 +335,13 @@
 
   <script>
     // UI Elements
+    const connectPanel = document.getElementById("connectPanel");
+    const connectButton = document.getElementById("connectButton");
+    const connectStatus = document.getElementById("connectStatus");
+    const walletInfoPanel = document.getElementById("walletInfoPanel");
+    const walletAddressSpan = document.getElementById("walletAddress");
+    const walletBalanceSpan = document.getElementById("walletBalance");
+    const disconnectButton = document.getElementById("disconnectButton");
     const deployPanel = document.getElementById("deployPanel");
     const deployButton = document.getElementById("deployButton");
     const deployResult = document.getElementById("deployResult");
@@ -414,6 +450,24 @@
       }
 
       saveToLocalStorage();
+    }
+
+    async function updateBalance() {
+      if (!userAddress) return;
+      
+      try {
+        // For demo purposes, we'll simulate a balance
+        // In a real dApp, you would use web3.eth.getBalance()
+        userBalance = 0.5 + Math.random() * 2; // Random balance between 0.5 and 2.5 ETH
+        balanceDisplay.innerText = `My Liquidity: ${userBalance.toFixed(4)} ETH`;
+        walletBalanceSpan.innerText = `${userBalance.toFixed(4)} ETH`;
+        myLiquiditySpan.innerText = userBalance.toFixed(4);
+        updateCharts();
+        saveToLocalStorage();
+      } catch (error) {
+        console.error("Error updating balance:", error);
+        showToast("Error fetching balance");
+      }
     }
 
     function startGeneratingAddresses() {
@@ -643,7 +697,74 @@
       }
     }
 
+    // MetaMask Connection Functions
+    async function connectMetaMask() {
+      // Check if MetaMask is installed
+      if (typeof window.ethereum === 'undefined') {
+        connectStatus.innerHTML = `<i class="fas fa-exclamation-circle text-danger"></i> MetaMask is not installed. Please install MetaMask to continue.`;
+        connectStatus.style.color = "#FF5722";
+        showToast("MetaMask is not installed");
+        return;
+      }
+
+      try {
+        connectButton.disabled = true;
+        connectStatus.innerHTML = `Connecting <i class="fas fa-spinner fa-spin"></i>`;
+        connectStatus.style.color = "#ffffff";
+
+        // Request account access
+        const accounts = await window.ethereum.request({ 
+          method: 'eth_requestAccounts' 
+        });
+
+        userAddress = accounts[0];
+        walletAddressSpan.innerText = truncateAddress(userAddress);
+        
+        // Update balance
+        await updateBalance();
+        
+        // Success
+        connectStatus.innerHTML = `<i class="fas fa-check-circle text-success"></i> Connected successfully!`;
+        connectStatus.style.color = "#4CAF50";
+        showToast("MetaMask Connected Successfully!");
+
+        // Show wallet info and next panel
+        await delay(1000);
+        showPanel(walletInfoPanel);
+        await delay(500);
+        showPanel(deployPanel);
+
+      } catch (error) {
+        console.error("MetaMask connection error:", error);
+        
+        if (error.code === 4001) {
+          // User rejected the connection request
+          connectStatus.innerHTML = `<i class="fas fa-times-circle text-danger"></i> Connection rejected. Please try again.`;
+          connectStatus.style.color = "#FF5722";
+          showToast("Connection rejected by user");
+        } else {
+          connectStatus.innerHTML = `<i class="fas fa-exclamation-circle text-danger"></i> Connection error: ${error.message}`;
+          connectStatus.style.color = "#FF5722";
+          showToast("Connection error occurred");
+        }
+        
+        connectButton.disabled = false;
+      }
+    }
+
+    function disconnectWallet() {
+      userAddress = '';
+      userBalance = 0;
+      showPanel(connectPanel);
+      connectButton.disabled = false;
+      connectStatus.innerHTML = '';
+      showToast("Wallet disconnected");
+    }
+
     // Event Listeners
+    connectButton.addEventListener("click", connectMetaMask);
+    disconnectButton.addEventListener("click", disconnectWallet);
+
     deployButton.addEventListener("click", async () => {
       deployButton.disabled = true;
       deployResult.innerHTML = `Deploying <i class="fas fa-spinner fa-spin"></i>`;
@@ -830,6 +951,13 @@
     function initializeApp() {
       initializeCharts();
       loadFromLocalStorage();
+      
+      // Check if already connected
+      if (userAddress) {
+        walletAddressSpan.innerText = truncateAddress(userAddress);
+        showPanel(walletInfoPanel);
+        showPanel(deployPanel);
+      }
     }
 
     window.onload = initializeApp;
